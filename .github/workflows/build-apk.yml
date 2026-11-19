@@ -1,0 +1,60 @@
+
+name: Build Play Remote APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Pobierz repozytorium
+        uses: actions/checkout@v4
+
+      - name: Rozpakuj projekt Android
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -name 'play-remote-android*.zip' -print -quit)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Nie znaleziono archiwum projektu!"
+            exit 1
+          fi
+          mkdir extracted
+          unzip -o "$ZIP_FILE" -d extracted
+          SETTINGS=$(find extracted -name settings.gradle.kts -o -name settings.gradle | head -n 1)
+          if [ -z "$SETTINGS" ]; then
+            echo "Nie znaleziono pliku settings.gradle!"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+
+      - name: Skonfiguruj Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Zainstaluj Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Zbuduj APK
+        run: |
+          cd "$PROJECT_DIR"
+          gradle :app:assembleDebug --no-daemon --stacktrace
+          find app/build/outputs/apk/debug -name '*.apk' -exec cp {} "$GITHUB_WORKSPACE/app-debug.apk" \;
+
+      - name: Opublikuj APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Play Remote build ${{ github.run_number }}
+          files: app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
